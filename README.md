@@ -5,6 +5,7 @@ nextflowを使ってみる。
 ワークフローの記述スクリプトとして [nextflow](https://www.nextflow.io)が良いという話を聞いたので、nextflowを利用してみる。
 
 ## 実行環境の構築
+
 先ずは、実行環境を準備する。
 
 この文書を作成しているシステムの環境は次の通り
@@ -33,7 +34,7 @@ Digest: sha256:3b0e64c667a0d1256844d6150ef1dadbbd11119ad6c88aa5b7ef7515d7968ba1
 Status: Downloaded newer image for nextflow/nextflow:latest
 ```
 
-##動作を確認
+## 動作を確認
 
 Dockerfileを確認すると、`ENTRYPOINT ["nextflow"] `なので、実行環境を確認するために`info`コマンドを実行してみる。
 
@@ -92,7 +93,8 @@ process helloWorld {
 
    output:
    result
-
+   
+   script:
    """
    echo "Hello World!"
    """
@@ -108,8 +110,9 @@ result.subscribe { println "Output: " + it }
 * 1行目 shbang 今回はあまり意味は無い
 * process で helloWorldを定義する
 * output: で resultというチャンネルに出力する事を定義する
-* 3個のダブルクォーテーションで囲まれた内容が処理の中核部分
+* script: 以降の3個のダブルクォーテーションで囲まれた内容が処理の中核部分
  * ここでは単に"Hello World!"を標準出力 => この出力が resultに入る
+ * script: の記述は無くても動作するようだ...
 * resultに データが入力されたら、 println の部分を実行するように subscribe で定義する
  * 表示の先頭に"Output: " を出力することで、echo で出力されたデータでは無く、変更している事がわかるようにした
 
@@ -132,7 +135,7 @@ Output: Hello World!
 正常に動作している。
 
 
-##動作の様子を確認
+## 動作の様子を確認
 
 `work`ディレクトリ下には、デフォルトでnextflowの実行時のファイルが全て保存されるので、コンテナの`/work`にマウントしているホストのディスクを調べれば動作の様子がわかる
 
@@ -181,7 +184,7 @@ drwxr-xr-x   3 nexflw  staff    96 Feb 26 13:52 a8
 
 ## エラーが発生すると何が起きるのか?
 
-`helloWorld.nf`の `echo "Hello World!"` 部分を `tell "Hello World!"に書き換えてワークフローを実行してみる。
+`helloWorld.nf`の `echo "Hello World!"` の部分を `tell "Hello World!"`(少なくともここには無いコマンド)に書き換えてワークフローを実行してみる。
 
 ```screen
 $ docker run -itv ${PWD}:/work nextflow/nextflow /work/helloWorld.nf
@@ -215,6 +218,27 @@ Tip: you can replicate the issue by changing to the process work dir and enterin
  -- Check '.nextflow.log' file for details
 ```
 
-上記のようなエラーが出力された。`/work/5e/e5b3a2741b7ddd5ec91c0ccb7ffeca`ディレクトリの`.command.run`を実行すれば同じエラーが再現できるはず。
-Command error:
-Command error:
+上記のようなエラーが出力された。`cd /work/5e/e5b3a2741b7ddd5ec91c0ccb7ffeca/; bash .command.run`を実行すれば同じエラーが再現できるはずとのこと。
+
+## エラーが起きたスクリプトを実際に実行してみる
+
+dockerのエントリーポイントを書き換えて`/bin/bash`を起動し、`.command.run`をインタラクティブに実行してエラーを再現させてみる。
+
+```screen
+$ docker run -it --entrypoint="/bin/bash" -v ${PWD}:/temp nextflow/nextflow
+bash-4.4# cd /work/5e/e5b3a2741b7ddd5ec91c0ccb7ffeca/; bash .command.run
+/work/5e/e5b3a2741b7ddd5ec91c0ccb7ffeca/.command.sh: line 2: tell: command not found
+```
+
+dockerの内部でbashを起動して、インタラクティブに実行した結果確かに同じエラーが発生した事がわかる。
+そこで、command.shの`tell`部分を`echo`に置き換えて再度実行してみる。
+
+```screen
+bash-4.4# cd /work/5e/e5b3a2741b7ddd5ec91c0ccb7ffeca/; bash .command.run
+Hello World!
+```
+
+正常に動作することを確認した。
+
+
+
