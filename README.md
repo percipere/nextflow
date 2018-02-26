@@ -349,8 +349,8 @@ result.subscribe { print "Output: " + it }
 ```
 
 * data_set: 文字から構成されるChannel
-* input ブロックで、data_setから個別のデータを取得してinput_valueに格納するよう指示
-* python3内のスクリプトをファイルに出力する前に、${input_value}の値を直接書き換える
+* input ブロックで、data_setから個別のデータを取得してシェル変数のinput_valueに格納しているイメージ
+* python3内のスクリプトをファイルに出力する前に、${input_value}の値をシェル変数の値で直接書き換える
 
 `testPython3.nf`を上記の様に変更してこのスクリプトを実行してみる。
 
@@ -382,7 +382,7 @@ name = 'python3'
 print(f"Item: a => I'm script of {name}.")
 ```
 
-print出力部分`Item: ${input_value}`が`Item: a =>`に変更されている事が確認できる。
+print出力部分`Item: ${input_value}`が`Item: a`に変更されている事が確認できる。
 
 ### スクリプトに標準入力(stdin)を利用してパラメーターを与える場合
 
@@ -409,6 +409,9 @@ process testPython3 {
    """ 
 }
 ```
+
+* input: を `stdin data_set` としている
+ * stdin には `data_set`の項目が1項目ずつ供給される
 
 data_setの内容がstdinを利用してscriptに渡している。
 pythonスクリプトでは標準入力を`sys.stdin.readline()`を利用して受け取る。
@@ -459,6 +462,9 @@ process testPython3 {
 result.subscribe { print "Output: " + it }
 ```
 
+* input: を `env PASS_PARAMETER from data_set` としている
+ * PASS_PARAMETER には `from data_set`を利用することで項目が1項目ずつ供給される
+ 
 data_setの内容を環境変数PASS_PARAMETERを利用してscriptに渡している。
 pythonスクリプトでは環境変数を`os.environ['PASS_PARAMETER']`を利用して受け取る。
 
