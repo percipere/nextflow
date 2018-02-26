@@ -242,7 +242,239 @@ Hello World!
 
 ## Scriptブロックに色々書いてみる
 
-script ブロックにはbashだけではなく、色々な言語で
+script ブロックにはbashだけではなく、色々な言語が利用できる。
+
+ここでは、python3のスクリプトを試してみるために、nextflowのコンテナにpython3の環境を追加したものを準備する。
+
+```
+$ docker run -it --entrypoint="/bin/bash" -v ${PWD}:/work nextflow/nextflow
+bash-4.4# python
+bash: python: command not found
+bash-4.4# uname -a
+Linux 6e5f62375a9a 4.9.60-linuxkit-aufs #1 SMP Mon Nov 6 16:00:12 UTC 2017 x86_64 GNU/Linux
+bash-4.4# apk add python3
+(1/4) Installing expat (2.2.5-r0)
+(2/4) Installing gdbm (1.13-r1)
+(3/4) Installing xz-libs (5.2.3-r1)
+(4/4) Installing python3 (3.6.3-r9)
+Executing busybox-1.27.2-r7.trigger
+OK: 147 MiB in 66 packages
+bash-4.4# python3 --version
+Python 3.6.3
+```
+
+alpine linux のパッケージ管理ツール`apk`を利用してpython3をインストールする
+
+`ctrl+p` `ctrl+q`でコンテナへの接続を一次的に解除して、ホスト上でpython3をインストールしたコンテナをコミットする。
+
+```
+$ docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+6418c1e4274f        nextflow/nextflow   "/bin/bash"         57 seconds ago      Up 57 seconds                           keen_banach
+$ docker commit --change='ENTRYPOINT ["nextflow"]' 6418c1e4274f nextflow_python
+sha256:da018de73b15d346e85fbacb8999f30980a9a45d439aa9413af07a8c90e7754b
+$ docker images nextflow_python
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+nextflow_python     latest              ef3e88c7b6c5        13 seconds ago      171MB
+$ docker attach 6418c1e4274f
+bash-4.4# exit
+```
+
+* docker ps: 動作中のコンテナのCONTAINER IDを確認する
+* docker commit: 動作中のコンテナを別名を付けてコミットする
+* docker images: コミットしたコンテナのイメージを確認する
+* docker attach: 先程接続を一次的に解除したコンテナに再接続する
+* exitで再接続したコンテナから抜ける
+
+python3のスクリプトをscriptブロックに記述したnextflowのファイルを作成
+
+```groovy
+#!/usr/bin/env nextflow
+
+process testPython3 {
+
+   output:
+   stdout result
+
+   script:
+   """ 
+   #!/usr/bin/env python3
+   name = 'python3'
+   print(f"I'm script of {name}.")
+   """ 
+}
+
+result.subscribe { println "Output: " + it }
+```
+`testPython3.nf`として保存して、このスクリプトを実行してみる。
+
+```
+$ docker run -it -v ${PWD}:/work nextflow_python run /work/testPython3.nf 
+N E X T F L O W  ~  version 0.27.6
+Launching `/work/testPython3.nf` [shrivelled_wright] - revision: 7923251243
+[warm up] executor > local
+[e8/bb80fb] Submitted process > testPython3
+Output: I'm script of python3.
+
+```
+
+python3で記述したファイルが実行できた。
+
+## input ブロックを利用してみる
+
+### スクリプト内部の変数を先に置き換えて実行の例
+
+```#!/usr/bin/env nextflow
+
+data_set = Channel.from( 'a', 'b', 'c', 'd' )
+
+process testPython3 {
+
+   input:
+   val input_value from data_set
+
+   output:
+   stdout result
+
+   script:
+   """ 
+   #!/usr/bin/env python3
+   import sys
+   name = 'python3'
+   print(f"Item: ${input_value} => I'm script of {name}.")
+   """ 
+}
+
+result.subscribe { print "Output: " + it }
+```
+
+* data_set: 文字から構成されるChannel
+* input ブロックで、data_setから個別のデータを取得してinput_valueに格納するよう指示
+* python3内のスクリプトをファイルに出力する前に、${input_value}の値を直接書き換える
+
+`testPython3.nf`を上記の様に変更してこのスクリプトを実行してみる。
+
+```
+$ docker run -it -v ${PWD}:/work nextflow_python run /work/testPython3.nf 
+N E X T F L O W  ~  version 0.27.6
+Launching `/work/testPython3.nf` [exotic_volhard] - revision: d0ca217810
+[warm up] executor > local
+[86/93d554] Submitted process > testPython3 (4)
+[7c/8402ef] Submitted process > testPython3 (1)
+[91/304c8e] Submitted process > testPython3 (3)
+[d3/3fc80e] Submitted process > testPython3 (2)
+Output: Item: b => I'm script of python3.
+Output: Item: a => I'm script of python3.
+Output: Item: c => I'm script of python3.
+Output: Item: d => I'm script of python3.
+
+```
+
+input_value毎に各処理が個別のディレクトリで実行される。結果は順不同。
+
+`.command.sh`を確認してみる。
+
+```
+$ cat f6/fa346b55c85988b56dff51af1f3e81/.command.sh
+#!/usr/bin/env python3
+import sys
+name = 'python3'
+print(f"Item: a => I'm script of {name}.")
+```
+
+print出力部分`Item: ${input_value}`が`Item: a =>`に変更されている事が確認できる。
+
+### スクリプトに標準入力(stdin)を利用してパラメーターを与える場合
+
+```
+#!/usr/bin/env nextflow
+
+data_set = Channel.from( 'a', 'b', 'c', 'd')
 
 
+process testPython3 {
 
+   input:
+   stdin data_set
+
+   output:
+   stdout result
+
+   script:
+   """ 
+   #!/usr/bin/env python3
+   import sys
+   name = 'python3'
+   print(f"Item: {sys.stdin.readline()} => I'm script of {name}.")
+   """ 
+}
+```
+
+data_setの内容がstdinを利用してscriptに渡している。
+pythonスクリプトでは標準入力を`sys.stdin.readline()`を利用して受け取る。
+
+```
+$ docker run -it -v ${PWD}:/work nextflow_python run /work/testPython3.nf 
+N E X T F L O W  ~  version 0.27.6
+Launching `/work/testPython3.nf` [nasty_hawking] - revision: 37909ff192
+[warm up] executor > local
+[dd/f27427] Submitted process > testPython3 (4)
+[f3/c145f8] Submitted process > testPython3 (3)
+[71/a15943] Submitted process > testPython3 (1)
+[77/52b140] Submitted process > testPython3 (2)
+Output: Item: d => I'm script of python3.
+Output: Item: b => I'm script of python3.
+Output: Item: a => I'm script of python3.
+Output: Item: c => I'm script of python3.
+```
+
+標準入力経由での実行を確認できた。
+
+
+### 環境変数を利用してパラメーターを与える場合
+
+```
+#!/usr/bin/env nextflow
+  
+data_set = Channel.from( 'a', 'b', 'c', 'd')
+
+
+process testPython3 {
+
+   input:
+   env PASS_PARAMETER from data_set
+
+   output:
+   stdout result
+
+   script:
+   """
+   #!/usr/bin/env python3
+   import os
+   name = 'python3'
+   print(f"Item: {os.environ['PASS_PARAMETER']} => I'm script of {name}.")
+   """
+}
+
+result.subscribe { print "Output: " + it }
+```
+
+data_setの内容を環境変数PASS_PARAMETERを利用してscriptに渡している。
+pythonスクリプトでは環境変数を`os.environ['PASS_PARAMETER']`を利用して受け取る。
+
+```
+$ docker run -it -v ${PWD}:/work nextflow_python run /work/testPython3.nf 
+N E X T F L O W  ~  version 0.27.6
+Launching `/work/testPython3.nf` [cranky_torricelli] - revision: 2e233b4d31
+[warm up] executor > local
+[2a/676a52] Submitted process > testPython3 (3)
+[9e/170d93] Submitted process > testPython3 (2)
+[22/d8b5bd] Submitted process > testPython3 (4)
+[29/7168f9] Submitted process > testPython3 (1)
+Output: Item: b => I'm script of python3.
+Output: Item: c => I'm script of python3.
+Output: Item: d => I'm script of python3.
+Output: Item: a => I'm script of python3.
+```
+
+環境変数経由での実行を確認できた。
